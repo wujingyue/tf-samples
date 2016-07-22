@@ -8,10 +8,8 @@ import tensorflow as tf
 class MnistSolver(object):
   __metaclass__ = abc.ABCMeta
 
-  def __init__(self, input_folder, checkpoint_path_prefix, batch_size,
-               step_count):
+  def __init__(self, input_folder, batch_size, step_count):
     self.data_sets = input_data.read_data_sets(input_folder, one_hot=True)
-    self.checkpoint_path_prefix = checkpoint_path_prefix
     self.batch_size = batch_size
     self.step_count = step_count
     self.period_count = 10
@@ -23,7 +21,7 @@ class MnistSolver(object):
     pass
 
   # Returns the path of the snapshot.
-  def Train(self):
+  def Train(self, checkpoint_path_prefix):
     with tf.Session() as sess:
       saver = tf.train.Saver()
       sess.run(tf.initialize_all_variables())
@@ -37,7 +35,7 @@ class MnistSolver(object):
           self.TrainOneStep(training_examples_batch, training_targets_batch,
                             sess)
       return saver.save(sess,
-                        self.checkpoint_path_prefix,
+                        checkpoint_path_prefix,
                         global_step=self.step_count)
 
   def TrainOneStep(self, training_examples, training_targets, sess):
@@ -64,12 +62,8 @@ class MnistSolver(object):
 
 
 class LinearSolver(MnistSolver):
-  def __init__(self, input_folder, checkpoint_path_prefix):
-    MnistSolver.__init__(self,
-                         input_folder,
-                         checkpoint_path_prefix,
-                         batch_size=100,
-                         step_count=10000)
+  def __init__(self, input_folder):
+    MnistSolver.__init__(self, input_folder, batch_size=100, step_count=10000)
 
   def BuildNetwork(self):
     self.x = tf.placeholder(tf.float32, [None, 784])
@@ -86,12 +80,8 @@ class LinearSolver(MnistSolver):
 
 
 class ConvolutionSolver(MnistSolver):
-  def __init__(self, input_folder, checkpoint_path_prefix):
-    MnistSolver.__init__(self,
-                         input_folder,
-                         checkpoint_path_prefix,
-                         batch_size=50,
-                         step_count=2000)
+  def __init__(self, input_folder):
+    MnistSolver.__init__(self, input_folder, batch_size=50, step_count=2000)
 
   def BuildConvolutionAndMaxPoolLayer(self, input_tensor, filter_shape,
                                       bias_shape):
@@ -140,29 +130,50 @@ class ConvolutionSolver(MnistSolver):
 
 def main():
   parser = argparse.ArgumentParser(
-      description='Solve MNIST using a linear classifier.')
+      description='Solve MNIST using a linear/convolution classifier.')
   parser.add_argument(
       'input_folder',
       type=str,
       help='the folder that contains the training and testing data')
-  parser.add_argument('checkpoint_path_prefix',
-                      type=str,
-                      help='the prefix of the path of the checkpoint')
   parser.add_argument('algorithm',
                       type=str,
                       choices=['linear', 'conv'],
                       help='the algorithm used to solve MNIST')
+  parser.add_argument('--train_only', action='store_true', help='train only')
+  parser.add_argument('--checkpoint_path_prefix',
+                      type=str,
+                      help='the prefix of the path of the checkpoint')
+  parser.add_argument('--evaluate_only',
+                      metavar='CHECKPOINT_PATH',
+                      type=str,
+                      help='evaluate the given checkpoint')
   args = parser.parse_args()
 
-  if args.algorithm == 'linear':
-    mnist_solver = LinearSolver(args.input_folder, args.checkpoint_path_prefix)
+  if args.train_only and args.evaluate_only is not None:
+    sys.exit('Cannot specify --train_only and --evaluate_only at the same time.')
+
+  if args.evaluate_only:
+    if args.checkpoint_path_prefix:
+      print >> sys.stderr, 'WARNING: --checkpoint_path_prefix is useless for evaluation and thus ignored.'
   else:
-    mnist_solver = ConvolutionSolver(args.input_folder,
-                                     args.checkpoint_path_prefix)
+    if args.checkpoint_path_prefix is None:
+      sys.exit(
+          'Must specify --checkpoint_path_prefix for outputing the training results.')
+
+  if args.algorithm == 'linear':
+    mnist_solver = LinearSolver(args.input_folder)
+  else:
+    mnist_solver = ConvolutionSolver(args.input_folder)
+
   mnist_solver.BuildNetwork()
-  checkpoint_path = mnist_solver.Train()
-  accuracy = mnist_solver.Evaluate(checkpoint_path)
-  print 'Achieved accuracy = %.2f%%' % (accuracy * 100)
+  if args.evaluate_only is not None:
+    checkpoint_path = args.evaluate_only
+  else:
+    checkpoint_path = mnist_solver.Train(args.checkpoint_path_prefix)
+
+  if not args.train_only:
+    accuracy = mnist_solver.Evaluate(checkpoint_path)
+    print 'Achieved accuracy = %.2f%%' % (accuracy * 100)
 
 
 if __name__ == '__main__':
