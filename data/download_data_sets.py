@@ -13,7 +13,14 @@ DATA_SETS_FILE_NAMES = ['train-images-idx3-ubyte.gz',
 
 def main():
   if os.path.exists(DATA_SETS_FOLDER):
-    print >> sys.stderr, 'WARNING: Detected an existing folder named %s. Deleting and redownload...' % DATA_SETS_FOLDER
+    print >> sys.stderr, 'WARNING: folder %s already exists.' % DATA_SETS_FOLDER
+    while True:
+      response = raw_input(
+          'Do you want to delete this folder and redownload the data sets? (y/n) ')
+      if response == 'n':
+        sys.exit('Aborted by the user.')
+      if response == 'y':
+        break
     shutil.rmtree(DATA_SETS_FOLDER)
   os.makedirs(DATA_SETS_FOLDER)
 
