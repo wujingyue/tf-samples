@@ -26,7 +26,7 @@ def main():
 
   for file_name in DATA_SETS_FILE_NAMES:
     print >> sys.stderr, 'Downloading %s...' % file_name
-    rc = subprocess.call(['wget', DATA_SETS_URL_PATTERN % file_name, '-o',
+    rc = subprocess.call(['wget', DATA_SETS_URL_PATTERN % file_name, '-O',
                           '%s/%s' % (DATA_SETS_FOLDER, file_name)])
     if rc != 0:
       sys.exit('Failed to download %s' % file_name)
