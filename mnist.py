@@ -8,12 +8,9 @@ import tensorflow as tf
 class MnistSolver(object):
   __metaclass__ = abc.ABCMeta
 
-  def __init__(self, input_folder, batch_size, step_count):
-    self.data_sets = input_data.read_data_sets(input_folder, one_hot=True)
-    self.batch_size = batch_size
-    self.step_count = step_count
-    self.period_count = 10
-    assert step_count % self.period_count == 0, 'step_count must be a multiple of %d' % self.period_count
+  def __init__(self, data_sets_folder):
+    if data_sets_folder:
+      self.data_sets = input_data.read_data_sets(data_sets_folder, one_hot=True)
 
   # Outputs x, y_target, train_one_step, compute_accuracy.
   @abc.abstractmethod
@@ -21,14 +18,17 @@ class MnistSolver(object):
     pass
 
   # Returns the path of the snapshot.
-  def Train(self, checkpoint_path_prefix):
+  def Train(self, batch_size, step_count, checkpoint_path_prefix):
+    PERIOD_COUNT = 10
+    assert step_count % PERIOD_COUNT == 0, 'step_count must be a multiple of %d' % PERIOD_COUNT
+    step_count_per_period = self.step_count / PERIOD_COUNT
+
     with tf.Session() as sess:
       saver = tf.train.Saver()
       sess.run(tf.initialize_all_variables())
-      step_count_per_period = self.step_count / self.period_count
-      for period_no in range(self.period_count):
+      for period_no in range(PERIOD_COUNT):
         print >> sys.stderr, 'Period %d out of %d...' % (period_no + 1,
-                                                         self.period_count)
+                                                         PERIOD_COUNT)
         for step_no in range(step_count_per_period):
           training_examples_batch, training_targets_batch = self.data_sets.train.next_batch(
               self.batch_size)
@@ -62,8 +62,8 @@ class MnistSolver(object):
 
 
 class LinearSolver(MnistSolver):
-  def __init__(self, input_folder):
-    MnistSolver.__init__(self, input_folder, batch_size=100, step_count=10000)
+  def __init__(self, data_sets_folder):
+    MnistSolver.__init__(self, data_sets_folder)
 
   def BuildNetwork(self):
     self.x = tf.placeholder(tf.float32, [None, 784])
@@ -80,8 +80,8 @@ class LinearSolver(MnistSolver):
 
 
 class ConvolutionSolver(MnistSolver):
-  def __init__(self, input_folder):
-    MnistSolver.__init__(self, input_folder, batch_size=50, step_count=2000)
+  def __init__(self, data_sets_folder):
+    MnistSolver.__init__(self, data_sets_folder)
 
   def BuildConvolutionAndMaxPoolLayer(self, input_tensor, filter_shape,
                                       bias_shape):
@@ -128,50 +128,75 @@ class ConvolutionSolver(MnistSolver):
         tf.argmax(y, 1), tf.argmax(self.y_target, 1))))
 
 
+def LegalizeArguments(args):
+  if args.action == 'train' or args.action == 'train_and_evaluate':
+    if args.checkpoint_path_prefix is None:
+      sys.exit(
+          'Must specify --checkpoint_path_prefix for outputing the training results.')
+  else:
+    if args.checkpoint_path_prefix:
+      print >> sys.stderr, 'WARNING: --checkpoint_path_prefix is useless for action: %s' % args.action
+
+  if args.action == 'evaluate' or args.action == 'solve':
+    if args.checkpoint_path is None:
+      sys.exit('Must specify --checkpoint_path for action: %s' % args.action)
+  else:
+    if args.checkpoint_path:
+      print >> sys.stderr, 'WARNING: --checkpoint_path is useless for action: %s' % args.action
+
+  if args.action == 'solve':
+    if args.data_sets_folder:
+      print >> sys.stderr, 'WARNING: --data_sets_folder is useless for action: %s' % args.action
+  else:
+    if args.data_sets_folder is None:
+      sys.exit('Must specify --data_sets_folder for action: %s' % args.action)
+
+
 def main():
   parser = argparse.ArgumentParser(
       description='Solve MNIST using a linear/convolution classifier.')
   parser.add_argument(
-      'input_folder',
+      'action',
       type=str,
-      help='the folder that contains the training and testing data')
+      choices=['train', 'evaluate', 'train_and_evaluate', 'solve'],
+      help='Action to take')
   parser.add_argument('algorithm',
                       type=str,
                       choices=['linear', 'conv'],
                       help='the algorithm used to solve MNIST')
-  parser.add_argument('--train_only', action='store_true', help='train only')
   parser.add_argument('--checkpoint_path_prefix',
                       type=str,
                       help='the prefix of the path of the checkpoint')
-  parser.add_argument('--evaluate_only',
-                      metavar='CHECKPOINT_PATH',
+  parser.add_argument('--checkpoint_path',
                       type=str,
-                      help='evaluate the given checkpoint')
+                      help='the path of the checkpoint to evaluate')
+  parser.add_argument(
+      '--data_sets_folder',
+      type=str,
+      help='the folder that contains the training and testing data')
   args = parser.parse_args()
 
-  if args.train_only and args.evaluate_only is not None:
-    sys.exit('Cannot specify --train_only and --evaluate_only at the same time.')
-
-  if args.evaluate_only:
-    if args.checkpoint_path_prefix:
-      print >> sys.stderr, 'WARNING: --checkpoint_path_prefix is useless for evaluation and thus ignored.'
-  else:
-    if args.checkpoint_path_prefix is None:
-      sys.exit(
-          'Must specify --checkpoint_path_prefix for outputing the training results.')
+  LegalizeArguments(args)
 
   if args.algorithm == 'linear':
-    mnist_solver = LinearSolver(args.input_folder)
+    mnist_solver = LinearSolver(args.data_sets_folder)
   else:
-    mnist_solver = ConvolutionSolver(args.input_folder)
+    mnist_solver = ConvolutionSolver(args.data_sets_folder)
 
   mnist_solver.BuildNetwork()
-  if args.evaluate_only is not None:
-    checkpoint_path = args.evaluate_only
+  if args.action == 'train' or args.action == 'train_and_evaluate':
+    if args.algorithm == 'linear':
+      batch_size = 100
+      step_count = 10000
+    else:
+      batch_size = 50
+      step_count = 2000
+    checkpoint_path = mnist_solver.Train(batch_size, step_count,
+                                         args.checkpoint_path_prefix)
   else:
-    checkpoint_path = mnist_solver.Train(args.checkpoint_path_prefix)
+    checkpoint_path = args.checkpoint_path
 
-  if not args.train_only:
+  if args.action == 'evaluate':
     accuracy = mnist_solver.Evaluate(checkpoint_path)
     print 'Achieved accuracy = %.2f%%' % (accuracy * 100)
 
