@@ -1,8 +1,17 @@
 from tensorflow.examples.tutorials.mnist import input_data
+from tensorflow.python.ops import io_ops
 import abc
 import argparse
 import sys
 import tensorflow as tf
+
+
+def DisplaySketch(image_array):
+  assert len(image_array) == 28 * 28
+  for x in range(28):
+    for y in range(28):
+      sys.stderr.write('1' if image_array[x * 28 + y] > 0.5 else '0')
+    sys.stderr.write('\n')
 
 
 class MnistSolver(object):
@@ -55,10 +64,26 @@ class MnistSolver(object):
       saver.restore(sess, checkpoint_path)
       return sess.run(self.compute_accuracy, feed_dict=inputs)
 
-  # Ultimately, this method should take an input image and output the digit
-  # recognized.
-  def Solve(self):
-    pass
+  def Solve(self, input_image_path, checkpoint_path):
+    raw_images = tf.image.decode_jpeg(
+        io_ops.read_file(input_image_path),
+        channels=1)
+    resized_images = tf.image.resize_images(raw_images, 28, 28)
+    flattened_images = tf.reshape(resized_images, [1, 28 * 28])
+    normalized_images = (255.0 - flattened_images) / 255.0
+    with tf.Session() as sess:
+      normalized_images = sess.run(normalized_images)
+    DisplaySketch(normalized_images[0])
+
+    inputs = {self.x: normalized_images}
+    if hasattr(self, 'keep_prob'):
+      inputs[self.keep_prob] = 1.0  # Why 1.0?
+    with tf.Session() as sess:
+      saver = tf.train.Saver()
+      saver.restore(sess, checkpoint_path)
+      digits = sess.run(self.recognize_digits, feed_dict=inputs)
+      assert len(digits) == 1
+      return digits[0]
 
 
 class LinearSolver(MnistSolver):
@@ -77,6 +102,7 @@ class LinearSolver(MnistSolver):
         average_loss)
     self.compute_accuracy = tf.reduce_mean(tf.to_float(tf.equal(
         tf.argmax(y, 1), tf.argmax(self.y_target, 1))))
+    self.recognize_digits = tf.argmax(y, 1)
 
 
 class ConvolutionSolver(MnistSolver):
@@ -126,6 +152,7 @@ class ConvolutionSolver(MnistSolver):
     self.train_one_step = tf.train.AdamOptimizer(1e-4).minimize(average_loss)
     self.compute_accuracy = tf.reduce_mean(tf.to_float(tf.equal(
         tf.argmax(y, 1), tf.argmax(self.y_target, 1))))
+    self.recognize_digits = tf.argmax(y, 1)
 
 
 def LegalizeArguments(args):
@@ -174,6 +201,8 @@ def main():
       '--data_sets_folder',
       type=str,
       help='the folder that contains the training and testing data')
+  parser.add_argument('--input_image_path',
+                      type=str, help = 'the path of the input image')
   args = parser.parse_args()
 
   LegalizeArguments(args)
@@ -200,6 +229,11 @@ def main():
     accuracy = mnist_solver.Evaluate(checkpoint_path)
     print 'Achieved accuracy = %.2f%%' % (accuracy * 100)
 
+  if args.action == 'solve':
+    if args.input_image_path is None:
+      sys.exit('Must specify --input_image_path.')
+    print 'Recognized digit = %d' % mnist_solver.Solve(args.input_image_path,
+                                                       checkpoint_path)
 
 if __name__ == '__main__':
   main()
