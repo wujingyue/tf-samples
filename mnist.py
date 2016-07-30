@@ -1,3 +1,4 @@
+from PIL import Image
 from tensorflow.examples.tutorials.mnist import input_data
 from tensorflow.python.ops import io_ops
 import abc
@@ -6,12 +7,23 @@ import sys
 import tensorflow as tf
 
 
-def DisplaySketch(image_array):
+def DisplaySketch(image_array, text_only=True):
   assert len(image_array) == 28 * 28
-  for x in range(28):
-    for y in range(28):
-      sys.stderr.write('1' if image_array[x * 28 + y] > 0.5 else '0')
-    sys.stderr.write('\n')
+  if text_only:
+    for x in range(28):
+      for y in range(28):
+        grayscale = max(0, min(9, int(image_array[x * 28 + y] * 10)))
+        sys.stderr.write(str(grayscale))
+      sys.stderr.write('\n')
+  else:
+    image = Image.new('L', (28, 28))
+    output_pixels = image.load()
+    for x in range(28):
+      for y in range(28):
+        grayscale = image_array[x * 28 + y]
+        output_pixel = max(0, min(255, int(round(255.0 - grayscale * 255.0))))
+        output_pixels[(y, x)] = output_pixel
+    image.show()
 
 
 class MnistSolver(object):
@@ -68,9 +80,12 @@ class MnistSolver(object):
     raw_images = tf.image.decode_jpeg(
         io_ops.read_file(input_image_path),
         channels=1)
-    resized_images = tf.image.resize_images(raw_images, 28, 28)
+    resized_images = tf.image.resize_images(
+        raw_images,
+        28, 28,
+        method=tf.image.ResizeMethod.AREA)
     flattened_images = tf.reshape(resized_images, [1, 28 * 28])
-    normalized_images = (255.0 - flattened_images) / 255.0
+    normalized_images = (255.0 - tf.to_float(flattened_images)) / 255.0
     with tf.Session() as sess:
       normalized_images = sess.run(normalized_images)
     DisplaySketch(normalized_images[0])
