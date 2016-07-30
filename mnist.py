@@ -6,21 +6,24 @@ import argparse
 import sys
 import tensorflow as tf
 
+HEIGHT = 28
+WIDTH = 28
+
 
 def DisplaySketch(image_array, text_only=True):
-  assert len(image_array) == 28 * 28
+  assert len(image_array) == HEIGHT * WIDTH
   if text_only:
-    for x in range(28):
-      for y in range(28):
-        grayscale = max(0, min(9, int(image_array[x * 28 + y] * 10)))
+    for x in range(HEIGHT):
+      for y in range(WIDTH):
+        grayscale = max(0, min(9, int(image_array[x * WIDTH + y] * 10)))
         sys.stderr.write(str(grayscale))
       sys.stderr.write('\n')
   else:
-    image = Image.new('L', (28, 28))
+    image = Image.new('L', (HEIGHT, WIDTH))
     output_pixels = image.load()
-    for x in range(28):
-      for y in range(28):
-        grayscale = image_array[x * 28 + y]
+    for x in range(HEIGHT):
+      for y in range(WIDTH):
+        grayscale = image_array[x * WIDTH + y]
         output_pixel = max(0, min(255, int(round(255.0 - grayscale * 255.0))))
         output_pixels[(y, x)] = output_pixel
     image.show()
@@ -82,9 +85,9 @@ class MnistSolver(object):
         channels=1)
     resized_images = tf.image.resize_images(
         raw_images,
-        28, 28,
+        HEIGHT, WIDTH,
         method=tf.image.ResizeMethod.AREA)
-    flattened_images = tf.reshape(resized_images, [1, 28 * 28])
+    flattened_images = tf.reshape(resized_images, [1, HEIGHT * WIDTH])
     normalized_images = (255.0 - tf.to_float(flattened_images)) / 255.0
     with tf.Session() as sess:
       normalized_images = sess.run(normalized_images)
@@ -150,7 +153,7 @@ class ConvolutionSolver(MnistSolver):
   def BuildNetwork(self):
     self.x = tf.placeholder(tf.float32, [None, 784])
     self.y_target = tf.placeholder(tf.float32, [None, 10])
-    x_as_images = tf.reshape(self.x, [-1, 28, 28, 1])
+    x_as_images = tf.reshape(self.x, [-1, HEIGHT, WIDTH, 1])
     conv1 = self.BuildConvolutionAndMaxPoolLayer(x_as_images,
                                                  filter_shape=[5, 5, 1, 32],
                                                  bias_shape=[32])
